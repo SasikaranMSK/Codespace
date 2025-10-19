@@ -1,0 +1,24 @@
+{
+  "name": "Custom Ubuntu Dev",
+  "build": { "dockerfile": "Dockerfile" },
+  "remoteUser": "vscode",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-azuretools.vscode-docker",
+        "ms-python.python",
+        "ms-toolsai.jupyter",
+        "ms-vscode.cpptools",
+        "eamodio.gitlens"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "python.defaultInterpreterPath": "/usr/bin/python3"
+      }
+    }
+  },
+  "postCreateCommand": "chmod +x .devcontainer/post-create.sh && .devcontainer/post-create.sh",
+  "postStartCommand": "sudo service chrome-remote-desktop restart || true && pulseaudio --start || true",
+  "forwardPorts": [],
+  "portsAttributes": {}
+}
