@@ -14,7 +14,13 @@ RUN apt-get update && apt-get upgrade -y && \
         qbittorrent thonny \
         libqt5webenginecore5 libqt5webenginewidgets5 \
         libqt5script5 libqt5scripttools5 \
+        apt install ffmpeg \
     && rm -rf /var/lib/apt/lists/*
+    
+# yt-dlp
+RUN mkdir -p ~/.local/bin \
+    curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ~/.local/bin/yt-dlp \
+    chmod a+rx ~/.local/bin/yt-dlp
 
 # Chrome Remote Desktop
 RUN wget https://dl.google.com/linux/direct/chrome-remote-desktop_current_amd64.deb && \
@@ -27,12 +33,12 @@ RUN wget https://github.com/amir1376/ab-download-manager/releases/download/v1.5.
     rm ABDownloadManager_1.5.4_linux_x64.deb
 
 # Avidemux AppImage (downloaded into /opt)
-RUN wget -O /opt/avidemux.AppImage "https://www.dropbox.com/scl/fi/c2vo7dc9blemneue71owr/avidemux_2.8.1.appImage?rlkey=4zodz3mtwt418r8n3x5k2ep78&st=y53w0p0j&dl=1" && \
-    chmod +x /opt/avidemux.AppImage
+RUN wget -O /home/vscode/Desktop/avidemux.AppImage "https://www.dropbox.com/scl/fi/c2vo7dc9blemneue71owr/avidemux_2.8.1.appImage?rlkey=4zodz3mtwt418r8n3x5k2ep78&st=y53w0p0j&dl=1" && \
+    chmod +x /home/vscode/Desktop/avidemux.AppImage
 
 # Telegram AppImage (downloaded into /opt)
-RUN wget -O /opt/telegram.AppImage "https://www.dropbox.com/scl/fi/h3szk2c2gscmvu7rfp2ty/Telegram.AppImage?rlkey=hmfixuty7bt9wfdbxbmakmyri&st=h0mjn9aw&dl=1" && \
-    chmod +x /opt/telegram.AppImage
+RUN wget -O /home/vscode/Desktop/telegram.AppImage "https://www.dropbox.com/scl/fi/h3szk2c2gscmvu7rfp2ty/Telegram.AppImage?rlkey=hmfixuty7bt9wfdbxbmakmyri&st=h0mjn9aw&dl=1" && chmod +x /home/vscode/Desktop/telegram.AppImage
+
 
 # Firefox (official Mozilla repo)
 RUN install -d -m 0755 /etc/apt/keyrings && \
