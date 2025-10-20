@@ -15,6 +15,7 @@ RUN apt-get update && apt-get upgrade -y && \
         libqt5webenginecore5 libqt5webenginewidgets5 \
         libqt5script5 libqt5scripttools5 \
         apt install ffmpeg \
+        sudo apt install pulseaudio \
     && rm -rf /var/lib/apt/lists/*
     
 # yt-dlp
