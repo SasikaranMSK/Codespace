@@ -20,7 +20,10 @@ RUN apt-get update && apt-get upgrade -y && \
 # yt-dlp
 RUN mkdir -p ~/.local/bin \
     curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ~/.local/bin/yt-dlp \
-    chmod a+rx ~/.local/bin/yt-dlp
+    chmod a+rx ~/.local/bin/yt-dlp \
+    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc \
+    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.profile \
+    source ~/.bashrc
 
 # Chrome Remote Desktop
 RUN wget https://dl.google.com/linux/direct/chrome-remote-desktop_current_amd64.deb && \
