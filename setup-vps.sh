@@ -4,7 +4,14 @@
 # Target: Ubuntu 22.04 (Jammy)
 # Run as root or with sudo:  sudo ./setup-vps.sh
 ###############################################################################
-set -euo pipefail
+set -Eeuo pipefail
+trap 'echo "ERROR: Setup failed at line $LINENO: $BASH_COMMAND" >&2' ERR
+REPAIR_DESKTOP=false
+case "${1:-}" in
+  --repair-desktop) REPAIR_DESKTOP=true ;;
+  "") ;;
+  *) echo "Usage: sudo bash setup-vps.sh [--repair-desktop]" >&2; exit 2 ;;
+esac
 
 if [ "$EUID" -ne 0 ]; then
   echo "Run this script as root: sudo bash setup-vps.sh" >&2
@@ -17,12 +24,28 @@ export TZ=Etc/UTC
 log() { echo -e "\n\033[1;34m[SETUP]\033[0m $*"; }
 ok() { echo -e "\033[1;32m  ✓\033[0m $*"; }
 
+# Create the desktop account before any per-user installation. Let useradd
+# allocate IDs so an existing Ubuntu account with UID 1000 is not a conflict.
+USERNAME=sasi
+if ! id "$USERNAME" &>/dev/null; then
+  useradd --create-home --user-group --shell /bin/bash "$USERNAME"
+  usermod -aG sudo "$USERNAME"
+  install -d -m 0755 /etc/sudoers.d
+  echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/90-${USERNAME}"
+  chmod 0440 "/etc/sudoers.d/90-${USERNAME}"
+fi
+USER_HOME="$(getent passwd "$USERNAME" | cut -d: -f6)"
+USER_GROUP="$(id -gn "$USERNAME")"
+as_user() {
+  sudo -H -u "$USERNAME" -- bash -c 'cd "$HOME"; exec "$@"' bash "$@"
+}
+
 ###############################################################################
 # 1. System update
 ###############################################################################
 log "Updating package index and upgrading system..."
 apt-get update -y
-apt-get upgrade -y
+if ! "$REPAIR_DESKTOP"; then apt-get upgrade -y; fi
 
 ###############################################################################
 # 2. Base packages
@@ -61,20 +84,6 @@ if [ ! -c /dev/fuse ]; then
 fi
 ok "AppImage runtime libraries installed."
 
-# Create the desktop account before any per-user installation. Let useradd
-# allocate IDs so an existing Ubuntu account with UID 1000 is not a conflict.
-USERNAME=vscode
-if ! id "$USERNAME" &>/dev/null; then
-  useradd --create-home --user-group --shell /bin/bash "$USERNAME"
-  usermod -aG sudo "$USERNAME"
-  echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/90-${USERNAME}"
-  chmod 0440 "/etc/sudoers.d/90-${USERNAME}"
-fi
-USER_HOME="$(getent passwd "$USERNAME" | cut -d: -f6)"
-USER_GROUP="$(id -gn "$USERNAME")"
-as_user() {
-  sudo -H -u "$USERNAME" -- bash -c 'cd "$HOME"; exec "$@"' bash "$@"
-}
 as_user xdg-user-dirs-update
 DESKTOP_DIR="$(as_user xdg-user-dir DESKTOP)"
 APP_DIR="$USER_HOME/Applications"
@@ -118,12 +127,51 @@ fi
 printf '#!/bin/sh\nexec dbus-run-session -- startxfce4\n' > "$USER_HOME/.xsession"
 chown "$USERNAME:$USER_GROUP" "$USER_HOME/.xsession"
 chmod 0755 "$USER_HOME/.xsession"
-sed -i 's/^AllowRootLogin=.*/AllowRootLogin=false/' /etc/xrdp/sesman.ini
+# Never remove the existing root RDP login before sasi has a usable password.
+if [ "$(passwd -S "$USERNAME" | awk '{print $2}')" != P ] && [ -t 0 ]; then
+  log "Set the RDP login password for $USERNAME..."
+  passwd "$USERNAME"
+fi
+if [ "$(passwd -S "$USERNAME" | awk '{print $2}')" = P ]; then
+  sed -i 's/^AllowRootLogin=.*/AllowRootLogin=false/' /etc/xrdp/sesman.ini
+else
+  echo "WARNING: Run passwd $USERNAME before logging in through RDP. Existing root RDP policy was preserved." >&2
+fi
 systemctl enable xrdp xrdp-sesman
 systemctl restart xrdp-sesman xrdp
 systemctl is-active --quiet xrdp-sesman xrdp
 ok "XRDP configured on TCP 3389; select Xorg and log in as $USERNAME."
 
+###############################################################################
+# 7. Firefox (official Mozilla repo)
+###############################################################################
+log "Installing Firefox..."
+install -d -m 0755 /etc/apt/keyrings
+wget -q https://packages.mozilla.org/apt/repo-signing-key.gpg \
+  -O- | tee /etc/apt/keyrings/packages.mozilla.org.asc > /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" \
+  | tee /etc/apt/sources.list.d/mozilla.list > /dev/null
+printf 'Package: *\nPin: origin packages.mozilla.org\nPin-Priority: 1000\n' \
+  > /etc/apt/preferences.d/mozilla
+# Prefer the native Mozilla package even if Ubuntu's versioned Snap stub is
+# already installed. Priority above 1000 permits replacing that newer stub.
+printf 'Package: firefox*\nPin: origin packages.mozilla.org\nPin-Priority: 1001\n\nPackage: firefox*\nPin: release o=Ubuntu\nPin-Priority: -1\n' \
+  > /etc/apt/preferences.d/mozilla-firefox
+apt-get update -y
+apt-get install -y --allow-downgrades firefox
+# Fail if APT installed Ubuntu's Snap transition package instead of Mozilla Firefox.
+if ! dpkg-query -L firefox | grep -qx '/usr/share/applications/firefox.desktop'; then
+  echo "Firefox desktop launcher missing; check apt-cache policy firefox." >&2
+  exit 1
+fi
+as_user firefox --version
+install -m 0755 -o "$USERNAME" -g "$USER_GROUP" \
+  /usr/share/applications/firefox.desktop "$DESKTOP_DIR/firefox.desktop"
+as_user xdg-settings set default-web-browser firefox.desktop
+ok "Firefox verified and its desktop launcher installed for $USERNAME."
+
+
+if ! "$REPAIR_DESKTOP"; then
 ###############################################################################
 # 4. yt-dlp
 ###############################################################################
@@ -164,21 +212,6 @@ wget -q "https://github.com/amir1376/ab-download-manager/releases/download/v1.5.
 apt-get install -y "$AB_DEB"
 rm -f "$AB_DEB"
 ok "AB Download Manager installed."
-
-###############################################################################
-# 7. Firefox (official Mozilla repo)
-###############################################################################
-log "Installing Firefox..."
-install -d -m 0755 /etc/apt/keyrings
-wget -q https://packages.mozilla.org/apt/repo-signing-key.gpg \
-  -O- | tee /etc/apt/keyrings/packages.mozilla.org.asc > /dev/null
-echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" \
-  | tee /etc/apt/sources.list.d/mozilla.list > /dev/null
-printf 'Package: *\nPin: origin packages.mozilla.org\nPin-Priority: 1000\n' \
-  > /etc/apt/preferences.d/mozilla
-apt-get update -y
-apt-get install -y firefox
-ok "Firefox installed."
 
 ###############################################################################
 # 8. Video DownloadHelper Companion App
@@ -248,6 +281,8 @@ fi
 chown "$USERNAME:$USER_GROUP" "$PROFILE"
 ok "Python venv ready at $USER_HOME/.venvs/default"
 
+fi # Full setup only: optional third-party applications and Python environment.
+
 ###############################################################################
 # 12. PulseAudio cleanup
 ###############################################################################
@@ -259,7 +294,9 @@ ok "PulseAudio runtime files cleaned."
 # 13. Restart services
 ###############################################################################
 log "Starting services..."
-service chrome-remote-desktop restart || true
+if ! "$REPAIR_DESKTOP"; then
+  service chrome-remote-desktop restart || true
+fi
 pulseaudio -D --exit-idle-time=-1 2>/dev/null || true
 ok "Services started."
 
@@ -279,7 +316,9 @@ echo "  Connect your RDP client to VPS_IP:3389; choose Xorg and log in as $USERN
 echo "  Log out of other desktop sessions for $USERNAME before using XRDP."
 echo ""
 echo "  1. Reboot the VPS:  sudo reboot"
+if ! "$REPAIR_DESKTOP"; then
 echo "  2. Open https://remotedesktop.google.com in Chrome"
 echo "  3. Run the remote-access registration command as $USERNAME (not root), and set a PIN"
 echo "  4. Connect as $USERNAME; desktop files are in $DESKTOP_DIR"
+fi
 echo ""

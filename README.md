@@ -7,7 +7,7 @@ A fully-featured Ubuntu 22.04 development desktop environment with Chrome Remote
 | Category | Packages |
 |---|---|
 | **Desktop** | XFCE4, xscreensaver, desktop themes |
-| **Remote Access** | Chrome Remote Desktop |
+| **Remote Access** | XRDP (XFCE/Xorg), Chrome Remote Desktop |
 | **Browser** | Firefox (official Mozilla repo) |
 | **Media** | VLC, ffmpeg, mkvtoolnix, avidemux (AppImage) |
 | **Download** | yt-dlp, qBittorrent, AB Download Manager, Video DownloadHelper |
@@ -52,7 +52,38 @@ chmod +x setup-vps.sh
 sudo ./setup-vps.sh
 ```
 
-#### Option B — Manual Step-by-Step
+### Repair an Existing VPS (Missing sasi User or Firefox)
+
+Use the updated script from this repository on the VPS. From its directory, run
+these commands in an SSH terminal as root (or with sudo):
+
+```bash
+sudo bash setup-vps.sh --repair-desktop
+sudo passwd sasi
+```
+
+Repair mode creates `sasi` before package installation, installs desktop and
+AppImage dependencies, configures XRDP/XFCE, and installs native Mozilla Firefox
+with a desktop shortcut. It skips the system upgrade and optional third-party
+downloads. If prompted during setup, set the password for `sasi` then; the
+second command above can also set or change it afterward.
+
+Log out of the root desktop and reconnect through RDP. Select **Xorg**, username
+**sasi**, and its new password. Allow TCP 3389 from your client IP in the VPS
+firewall if needed. Applications appear in the XFCE Applications menu; Firefox
+also has a shortcut in `sasi`'s Desktop directory.
+
+Setup preserves the existing root RDP policy until `sasi` has a password.
+Configuration changes restart XRDP, so use SSH to run the repair. If setup fails,
+it prints the failing command and line; resolve that error and rerun it. Verify:
+
+```bash
+getent passwd sasi
+sudo -H -u sasi firefox --version
+systemctl is-active xrdp xrdp-sesman
+```
+
+#### Option B — Manual Step-by-Step (Legacy Reference)
 
 Follow each step below if you prefer full control.
 
@@ -159,7 +190,7 @@ chmod +x ~/Desktop/telegram.AppImage
 ### 9. Create Non-Root User (Optional — Recommended for Security)
 
 ```bash
-USERNAME=vscode
+USERNAME=sasi
 USER_UID=1000
 USER_GID=1000
 
@@ -246,7 +277,7 @@ sudo reboot
 |---|---|
 | **Chrome Remote Desktop not connecting** | Run `sudo service chrome-remote-desktop restart` and verify your PIN. |
 | **No audio in remote session** | Run `pulseaudio -D --exit-idle-time=-1` or use the `startup.sh` script. |
-| **AppImage won't launch** | Ensure FUSE is installed: `sudo apt-get install -y fuse3`. |
+| **AppImage won't launch** | On Ubuntu 22.04 install `libfuse2` alongside `fuse3`; verify `/dev/fuse` exists. |
 | **yt-dlp not found** | Make sure `~/.local/bin` is in your PATH: `export PATH="$HOME/.local/bin:$PATH"`. |
 
 ---
