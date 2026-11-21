@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 ###############################################################################
 # Sasikaran Codespace — Automated VPS Setup Script
-# Target: Ubuntu 22.04 (Jammy)
+# Target: Ubuntu desktop VPS (release-aware runtime package names)
 # Run as root or with sudo:  sudo ./setup-vps.sh
 ###############################################################################
 set -Eeuo pipefail
@@ -23,10 +23,12 @@ export TZ=Etc/UTC
 
 log() { echo -e "\n\033[1;34m[SETUP]\033[0m $*"; }
 ok() { echo -e "\033[1;32m  ✓\033[0m $*"; }
+log "Setup revision 2026-11-21.1; repair-desktop=$REPAIR_DESKTOP"
 
 # Create the desktop account before any per-user installation. Let useradd
 # allocate IDs so an existing Ubuntu account with UID 1000 is not a conflict.
 USERNAME=sasi
+log "Ensuring desktop account '$USERNAME' exists..."
 if ! id "$USERNAME" &>/dev/null; then
   useradd --create-home --user-group --shell /bin/bash "$USERNAME"
   usermod -aG sudo "$USERNAME"
@@ -36,6 +38,7 @@ if ! id "$USERNAME" &>/dev/null; then
 fi
 USER_HOME="$(getent passwd "$USERNAME" | cut -d: -f6)"
 USER_GROUP="$(id -gn "$USERNAME")"
+ok "Desktop account: $USERNAME ($USER_HOME)"
 as_user() {
   sudo -H -u "$USERNAME" -- bash -c 'cd "$HOME"; exec "$@"' bash "$@"
 }
@@ -43,9 +46,31 @@ as_user() {
 ###############################################################################
 # 1. System update
 ###############################################################################
-log "Updating package index and upgrading system..."
+log "Updating package index..."
 apt-get update -y
-if ! "$REPAIR_DESKTOP"; then apt-get upgrade -y; fi
+if ! "$REPAIR_DESKTOP"; then
+  log "Upgrading system..."
+  apt-get upgrade -y
+fi
+
+# Ubuntu 24.04+ renamed several libraries during the time64 transition.
+# Query actual APT candidates instead of installing ambiguous virtual packages.
+runtime_package() {
+  local package candidate
+  for package in "$@"; do
+    candidate="$(apt-cache policy "$package" | awk '/Candidate:/ {print $2; exit}')"
+    if [ -n "$candidate" ] && [ "$candidate" != '(none)' ]; then
+      printf '%s\n' "$package"
+      return 0
+    fi
+  done
+  echo "No installable runtime package found: $*" >&2
+  return 1
+}
+FUSE2_PACKAGE="$(runtime_package libfuse2t64 libfuse2)"
+GTK3_PACKAGE="$(runtime_package libgtk-3-0t64 libgtk-3-0)"
+ALSA_PACKAGE="$(runtime_package libasound2t64 libasound2)"
+ok "Runtime packages: $FUSE2_PACKAGE, $GTK3_PACKAGE, $ALSA_PACKAGE"
 
 ###############################################################################
 # 2. Base packages
@@ -62,7 +87,7 @@ apt-get install -y --no-install-recommends \
   libqt5script5 libqt5scripttools5 \
   ffmpeg \
   pulseaudio \
-  jq make htop git fuse3 libfuse2 python3-venv xdg-user-dirs
+  jq make htop git fuse3 "$FUSE2_PACKAGE" python3-venv xdg-user-dirs
 
 ok "Base packages installed."
 
@@ -70,7 +95,7 @@ ok "Base packages installed."
 # FUSE 2 and FUSE 3 libraries coexist; do not replace fuse3 with the fuse package.
 log "Installing AppImage runtime libraries..."
 apt-get install -y --no-install-recommends \
-  libgtk-3-0 libnss3 libnspr4 libasound2 libgbm1 libdrm2 \
+  "$GTK3_PACKAGE" libnss3 libnspr4 "$ALSA_PACKAGE" libgbm1 libdrm2 \
   libgl1 libegl1 libgl1-mesa-dri libxss1 libxtst6 \
   libx11-xcb1 libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 \
   libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \

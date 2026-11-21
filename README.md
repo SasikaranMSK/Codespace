@@ -54,6 +54,12 @@ sudo ./setup-vps.sh
 
 ### Repair an Existing VPS (Missing sasi User or Firefox)
 
+The script selects available runtime package names from APT, including
+`libasound2t64`, `libgtk-3-0t64`, and `libfuse2t64` on newer Ubuntu releases.
+If you see `libasound2 has no installation candidate`, replace the VPS copy with
+the updated `setup-vps.sh` first. Startup must print revision `2026-11-21.1`
+and `Ensuring desktop account 'sasi' exists...` before any APT operations.
+
 Use the updated script from this repository on the VPS. From its directory, run
 these commands in an SSH terminal as root (or with sudo):
 
